@@ -19,17 +19,6 @@ MAX_NEW_TOKENS = 300  # cap on llm output
 N_SCALER_GROUPS = 32  # each layer's activation vector is mean-pooled down to this width
 
 
-def mean_pool_tensor(
-    tensor: list[float], n_groups: int = N_SCALER_GROUPS
-) -> list[float]:
-    """Mean-pool a single layer's raw activation vector down to n_groups batches."""
-    batch_size = len(tensor) // n_groups
-    return [
-        sum(batch) / len(batch)
-        for batch in itertools.batched(tensor, batch_size, strict=True)
-    ]
-
-
 logger = getLogger(__name__)
 
 
@@ -323,7 +312,7 @@ class ProfiledSmolLM:
         return coords_by_token
 
     def _parse_average_layer_attentions(
-        self, attentions: tuple[tuple[torch.FloatTensor]]
+        self, attentions: tuple[tuple[torch.FloatTensor, ...], ...]
     ) -> list[np.ndarray]:
         """Average attentions per layer across attention block heads
 
@@ -337,7 +326,7 @@ class ProfiledSmolLM:
         parsed: list[np.ndarray] = []
 
         for i in range(len(attentions)):
-            layers: tuple[torch.FloatTensor] = attentions[i]
+            layers: tuple[torch.FloatTensor, ...] = attentions[i]
             token_layers: list[np.ndarray] = []
 
             for j in range(len(layers)):
@@ -357,3 +346,14 @@ class ProfiledSmolLM:
             parsed.append(np.array(token_layers))
 
         return parsed
+
+
+def mean_pool_tensor(
+    tensor: list[float], n_groups: int = N_SCALER_GROUPS
+) -> list[float]:
+    """Mean-pool a single layer's raw activation vector down to n_groups batches."""
+    batch_size = len(tensor) // n_groups
+    return [
+        sum(batch) / len(batch)
+        for batch in itertools.batched(tensor, batch_size, strict=True)
+    ]

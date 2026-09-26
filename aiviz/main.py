@@ -22,6 +22,7 @@ defaults = {
     "tokens": [],  # list[ProfiledToken]
     "token_idx": 0,
     "model_id": "",
+    "model": None,  # ProfiledSmolLM | None, loaded on first prompt
 }
 for key, value in defaults.items():
     if key not in st.session_state:
@@ -30,9 +31,6 @@ for key, value in defaults.items():
 N_LAYERS = 30
 INPUT_PLACEHOLDER = "Enter a prompt"
 STREAM_DELAY_SECONDS = 0.10
-LOAD_STEP_LABEL = f"Loading {st.session_state.model_id}"
-GENERATE_STEP_LABEL = "Generating response"
-DONE_STEP_LABEL = "Generated response"
 ATTENTION_TOP_N = 8  # context tokens shown in the attention chart
 ALL_LAYERS = "Tensor Avg."
 ATTENTION_SELECT_WIDTH_PX = 130
@@ -58,9 +56,9 @@ def main() -> None:
                     token_picker(disabled=bool(prompt))
             with output_box:
                 if prompt:
-                    run_llm(prompt)
+                    stream_model_response(prompt)
                 else:
-                    output_field()
+                    render_completed_response()
 
         # render visualizations
         with chart_col, st.container(border=True, key="chart_box"):
@@ -85,24 +83,6 @@ def main() -> None:
                 render_attention_chart()
             with embedding, st.container(horizontal_alignment="center"):
                 render_embedding_chart()
-
-
-def output_field() -> None:
-    """Renders llm output box"""
-    tokens: list[ProfiledToken] = st.session_state.tokens
-    if not tokens:
-        st.caption("Response will appear here.")
-        return
-
-    with st.chat_message("user"):
-        st.write(st.session_state.prompt)
-
-    if st.session_state.timings:
-        with st.chat_message("assistant"):
-            render_timeline(*st.session_state.timings)
-
-    with st.chat_message("assistant"):
-        st.write("".join(t.text for t in tokens))
 
 
 def token_picker(disabled: bool = False) -> None:
@@ -152,35 +132,39 @@ def pill_labels(tokens: list[str]) -> list[str]:
     return labels
 
 
-def run_llm(prompt: str) -> None:
-    """Generate response for prompt and render output status / text"""
-    with st.chat_message("user"):
+LOAD_STEP_LABEL = f"Loading {st.session_state.model_id}"
+
+
+def stream_model_response(prompt: str) -> None:
+    """Stream status of LLM generation to output box as timeline"""
+
+    with st.chat_message(name="user"):
         st.write(prompt)
 
     model = None
     model_id = ""
 
-    with st.chat_message("assistant"):
+    with st.chat_message(name="assistant"):
         with st.status(LOAD_STEP_LABEL, type="step"):
-            start = time.perf_counter()
+            start: float = time.perf_counter()
             if not USE_MOCK_LLM:
-                model = load_llm()
-                model_id = model.MODEL_ID
-            load_seconds = time.perf_counter() - start
+                model: ProfiledSmolLM = load_llm()
+                model_id: str = model.MODEL_ID
+            load_seconds: float = time.perf_counter() - start
             st.write(load_step_detail(load_seconds))
 
-        with st.status(GENERATE_STEP_LABEL, type="step"):
-            start = time.perf_counter()
+        with st.status(label="Generating response", type="step"):
+            start: float = time.perf_counter()
             if model is None:
-                tokens = fixtures.mock_tokens()
+                tokens: list[ProfiledToken] = fixtures.mock_tokens()
             else:
-                tokens = model.run(prompt)
-            generate_seconds = time.perf_counter() - start
+                tokens: list[ProfiledToken] = model.run(user_input=prompt)
+            generate_seconds: float = time.perf_counter() - start
             st.write(generate_step_detail(generate_seconds))
 
-        st.status(DONE_STEP_LABEL, state="complete", type="step")
+        st.status(label="Generated response", state="complete", type="step")
 
-    with st.chat_message("assistant"):
+    with st.chat_message(name="assistant"):
         st.write_stream(stream_tokens(tokens))
 
     st.session_state.model_id = model_id
@@ -188,14 +172,34 @@ def run_llm(prompt: str) -> None:
     st.session_state.timings = (load_seconds, generate_seconds)
     st.session_state.tokens = tokens
     st.session_state.token_idx = 0
-    st.rerun("app")
+    st.rerun(scope="app")
 
 
-def stream_tokens(tokens: list[ProfiledToken]) -> Iterator[str]:
-    """Yield the generated tokens' text one at a time, paced so the stream is visible."""
-    for token in tokens:
-        yield token.text
-        time.sleep(STREAM_DELAY_SECONDS)
+def render_completed_response() -> None:
+    """Renders llm output box"""
+    tokens: list[ProfiledToken] = st.session_state.tokens
+    if not tokens:
+        st.caption("Response will appear here.")
+        return
+
+    with st.chat_message("user"):
+        st.write(st.session_state.prompt)
+
+    if st.session_state.timings:
+        with st.chat_message("assistant"):
+            render_timeline(*st.session_state.timings)
+
+    with st.chat_message("assistant"):
+        st.write("".join(t.text for t in tokens))
+
+
+def render_timeline(load_seconds: float, generate_seconds: float) -> None:
+    """Render output box timeline with completed run details"""
+    with st.status(LOAD_STEP_LABEL, state="complete", type="step"):
+        st.write(load_step_detail(load_seconds))
+    with st.status(label="Generating response", state="complete", type="step"):
+        st.write(generate_step_detail(generate_seconds))
+    st.status(label="Generated response", state="complete", type="step")
 
 
 def load_step_detail(seconds: float) -> str:
@@ -206,18 +210,18 @@ def generate_step_detail(seconds: float) -> str:
     return f"Generated output in {seconds:.1f} seconds."
 
 
-def render_timeline(load_seconds: float, generate_seconds: float) -> None:
-    """Re-render a finished run's steps (same as the live ones, but already complete)."""
-    with st.status(LOAD_STEP_LABEL, state="complete", type="step"):
-        st.write(load_step_detail(load_seconds))
-    with st.status(GENERATE_STEP_LABEL, state="complete", type="step"):
-        st.write(generate_step_detail(generate_seconds))
-    st.status(DONE_STEP_LABEL, state="complete", type="step")
+def stream_tokens(tokens: list[ProfiledToken]) -> Iterator[str]:
+    """Yield the generated tokens' text one at a time, paced so the stream is visible."""
+    for token in tokens:
+        yield token.text
+        time.sleep(STREAM_DELAY_SECONDS)
 
 
 def load_llm() -> ProfiledSmolLM:
-    """Download (if needed) and load the local model once per server process."""
-    return ProfiledSmolLM()
+    """Return this session's model, downloading (if needed) and loading it on first use."""
+    if st.session_state.model is None:
+        st.session_state.model = ProfiledSmolLM()
+    return st.session_state.model
 
 
 #          ╭──────────────────────────────────────────────────────────╮

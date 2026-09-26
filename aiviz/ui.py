@@ -1,9 +1,4 @@
-"""Altair chart definitions and page CSS: given prepared data, render a styled chart.
-
-Data assembly and Streamlit wiring stay in main.py; this module only knows
-how a DataFrame should look once it's handed a chart to build, and how the
-page itself should be styled.
-"""
+"""Altair chart styles and page CSS"""
 
 from typing import no_type_check
 
