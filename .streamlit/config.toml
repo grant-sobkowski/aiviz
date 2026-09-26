@@ -1,0 +1,29 @@
+# Module-walking watcher trips over transformers' optional torchvision-dependent
+# submodules and logs harmless tracebacks; disable it since we don't rely on
+# Streamlit's hot-reload-on-save behavior anyway.
+[server]
+fileWatcherType = "auto"
+
+# Light theme in the style of Anthropic's brand colors (ivory background, slate text, clay
+# orange accent). Chart colors: brand orange leads (single-series bars use the first categorical
+# color), and the sequential ramp (heatmap) runs from near-surface cream up to dark brown.
+[theme]
+base = "light"
+primaryColor = "#d97757"
+backgroundColor = "#faf9f5"
+secondaryBackgroundColor = "#f0eee6"
+textColor = "#141413"
+chartCategoricalColors = [
+    "#d97757",  # clay orange
+    "#6a9bcc",  # blue
+    "#788c5d",  # green
+    "#eda100",  # yellow
+    "#e87ba4",  # magenta
+    "#4a3aa7",  # violet
+    "#1baf7a",  # aqua
+    "#e34948",  # red
+]
+chartSequentialColors = [
+    "#ffe5db", "#fbcbba", "#efb49f", "#e39e85", "#d6886b",
+    "#c97151", "#bb5a36", "#ad4213", "#963301", "#7b2902",
+]
